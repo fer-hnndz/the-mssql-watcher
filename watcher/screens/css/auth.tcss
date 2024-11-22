@@ -1,0 +1,23 @@
+#from-date {
+    width: 20%;
+}
+
+#to-date {
+    width: 20%;
+}
+
+#to-label {
+    margin-left: 20;
+}
+
+Center {
+    content-align: center middle;
+}
+
+Horizontal {
+    height: auto
+}
+
+Button {
+    margin-top: 3;
+}

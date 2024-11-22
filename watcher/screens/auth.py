@@ -15,6 +15,8 @@ from textual.app import ComposeResult
 
 
 class AuthScreen(Screen):
+    CSS_PATH = "css/auth.tcss"
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield Footer()
