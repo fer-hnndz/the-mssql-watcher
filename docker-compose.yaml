@@ -1,0 +1,21 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+
+    ports:
+      - "1433:1433"
+
+    build:
+      args:
+        name: watcher
+        hostname: localhost
+
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=freaky_gates123
+
+    volumes:
+      - mssql:/var/opt/mssql
+
+volumes:
+  mssql:
