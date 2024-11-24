@@ -167,6 +167,7 @@ WHERE AllocUnitName IS NOT NULL
         """Just parse it."""
 
         schema = self.fetch_table_schema()
+        parsed_transactions: dict[str, typing.Any] = {}
         for record in log:
             # Parse the table name from alloc_unit
             # dbo.Something.[...]
@@ -181,6 +182,14 @@ WHERE AllocUnitName IS NOT NULL
                 raise TypeError(f"Table {table_name} not found in schema.")
 
             if record.operation == "LOP_INSERT_ROWS":
+
+                if not parsed_transactions.get(record.operation):
+                    parsed_transactions[record.operation] = {}
+                    parsed_transactions[record.operation][table_name] = []
+
+                elif not parsed_transactions[record.operation].get(table_name):
+                    parsed_transactions[record.operation][table_name] = []
+
                 # Skip first bytes
                 useful_data = record.raw_data[4:]
 
@@ -273,7 +282,9 @@ WHERE AllocUnitName IS NOT NULL
                     decoded_value = self.try_decode(data_chunk)
                     operation_data[column_name] = decoded_value.strip()
 
-                    print(operation_data)
+                parsed_transactions[record.operation][table_name].append(operation_data)
+
+        print("Parsed Transactions:", parsed_transactions)
 
     def try_decode(self, data):
         """
