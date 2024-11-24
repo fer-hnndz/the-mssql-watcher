@@ -185,39 +185,109 @@ WHERE AllocUnitName IS NOT NULL
                 useful_data = record.raw_data[4:]
 
                 operation_data: dict[str, typing.Any] = {}
-                for column_name, data_type in table_schema:
-                    if data_type == "int":
-                        if "id" in column_name.lower():
-                            # Read an int (4 bytes)
-                            print("Reading an ID")
+                for idx, (column_name, data_type) in enumerate(table_schema):
+                    if data_type not in ["char", "varchar", "nvarchar", "nchar"]:
+
+                        if data_type == "int":
                             read_int = int.from_bytes(useful_data[:4], "little")
                             operation_data[column_name] = read_int
-                            useful_data = useful_data[2:]
+                            useful_data = useful_data[4:]  # Skip parsed bytes
 
-                        else:
-                            # Read an int (4 bytes)
-                            read_int = int.from_bytes(useful_data[:4], "little")
-                            operation_data[column_name] = read_int
-                            useful_data = useful_data[4:]  # Skip the parsed data
+                # ================================================================================
+                #                       Parse now variable length columns
+                # ================================================================================
 
-                    elif data_type in ["char", "varchar", "nvarchar", "nchar"]:
-                        # Read the string length (4 bytes, little-endian)
-                        str_len = int.from_bytes(useful_data[:4], "little")
-                        useful_data = useful_data[4:]  # Skip length bytes
+                # Filter only the variable length columns from the table schema
+                variable_colummns = filter(
+                    lambda col: col[1] in ["char", "varchar", "nvarchar", "nchar"],
+                    table_schema,
+                )
 
-                        print("String length:", str_len)
+                # Declare here the dictionary to store the offsets so we can use the same offsets for the next column
+                variable_offsets: dict[int, int] = {}
 
-                        if data_type in ["nvarchar", "nchar"]:
-                            # nvarchar uses UTF-16 encoding (2 bytes per character)
-                            read_str = useful_data[: str_len * 2].decode("utf-16-le")
-                            useful_data = useful_data[str_len * 2 :]
-                        else:
-                            # varchar uses UTF-8 or ASCII
-                            read_str = useful_data[:str_len].decode("utf-8")
-                            useful_data = useful_data[str_len:]
+                for idx, (column_name, data_type) in enumerate(variable_colummns):
 
-                        operation_data[column_name] = read_str
+                    raw = record.raw_data  # Reset everything to the start of the data
+
+                    # This offset represents the start position of the columns from the start of the data
+                    column_offset = int.from_bytes(raw[2:4], "little")
+
+                    if column_offset >= len(raw):
+                        print(
+                            "Error: Offset al número de columnas fuera del rango de datos."
+                        )
+                        return None
+
+                    # The amount of columns is located 2 bytes after the column offset
+                    total_columns = int.from_bytes(
+                        raw[column_offset : column_offset + 2], "little"
+                    )
+
+                    print(f"Column count: {total_columns}")
+
+                    # Calculate the amount of columns that have a variable size
+                    null_bitmap_size = (total_columns + 7) // 8
+                    variable_column_count_offset = column_offset + 2 + null_bitmap_size
+
+                    # The amount of columns that have a variable size is located 2 bytes after the variable column count offset
+                    variable_column_count = int.from_bytes(
+                        raw[
+                            variable_column_count_offset : variable_column_count_offset
+                            + 2
+                        ],
+                        "little",
+                    )
+
+                    print(f"Variable column count: {variable_column_count}")
+
+                    variable_data_start = (
+                        variable_column_count_offset + 2 + variable_column_count * 2
+                    )
+
+                    offset_start = (
+                        variable_column_count_offset + 2
+                    )  # Here is where data starts
+
+                    for i in range(variable_column_count):
+                        start_pos = offset_start + (i * 2)
+                        var_offset = int.from_bytes(
+                            raw[start_pos : start_pos + 2], "little"
+                        )
+
+                        variable_offsets[i] = var_offset
+
+                    print("Variable offsets:", variable_offsets)
+
+                    last_offset = variable_offsets.get(idx - 1)
+                    start = last_offset if last_offset else variable_data_start
+                    end = (
+                        variable_offsets[idx]
+                        if idx < len(variable_offsets)
+                        else len(raw)
+                    )
+
+                    print(f"Start: {start}, End: {end}")
+
+                    data_chunk = raw[start:end]
+                    decoded_value = self.try_decode(data_chunk)
+                    operation_data[column_name] = decoded_value.strip()
 
                     print(operation_data)
 
-                break
+    def try_decode(self, data):
+        """
+        Detecta automáticamente la codificación de los datos.
+        Decodifica en UTF-8 primero, pero si encuentra un patrón típico de UTF-16, cambia a UTF-16.
+        """
+
+        if all(data[i] == 0 for i in range(1, len(data), 2)):
+            try:
+                return data.decode("utf-16", errors="strict")
+            except UnicodeDecodeError:
+                pass
+
+        try:
+            return data.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return data.decode("utf-8", errors="replace")
