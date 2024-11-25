@@ -77,7 +77,7 @@ class AuthScreen(Screen):
         for row in self.CURSOR.fetchall():
             table_name: str = row[0]
             self.CURSOR.execute(
-                f"""SELECT COLUMN_NAME, DATA_TYPE
+                f"""SELECT COLUMN_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE
 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}';"""
             )
 
@@ -87,11 +87,17 @@ FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}';"""
             # Types that are put to the end of the RowLog because of their variable size.
             final_types = []
             for column_row in self.CURSOR.fetchall():
-                column_name, data_type = column_row
+                column_name, data_type, numeric_precision, numeric_scale = column_row
 
                 if data_type in ["char", "varchar", "nvarchar", "nchar"]:
                     final_types.append((column_name, data_type))
                 else:
+                    if data_type == "decimal":
+                        t = f"decimal({numeric_precision},{numeric_scale})"
+                        print(t)
+                        tables[table_name].append((column_name, t))
+                        continue
+
                     tables[table_name].append((column_name, data_type))
 
             tables[table_name].extend(final_types)
@@ -202,6 +208,66 @@ WHERE AllocUnitName IS NOT NULL
                             operation_data[column_name] = read_int
                             useful_data = useful_data[4:]  # Skip parsed bytes
 
+                        elif "decimal" in data_type:
+                            # Parse precision and scale from decimal(x,y)
+
+                            scale = int(data_type.split(",")[1].replace(")", ""))
+                            precision = int(
+                                data_type.split(",")[0].replace("decimal(", "")
+                            )
+                            bytes_for_value = 0
+
+                            # Determine amount of bytes to read
+                            if 1 <= precision <= 9:
+                                bytes_for_value = 5
+                            elif 10 <= precision <= 19:
+                                bytes_for_value = 9
+                            elif 20 <= precision <= 28:
+                                bytes_for_value = 13
+                            elif 29 <= precision <= 38:
+                                bytes_for_value = 17
+                            else:
+                                raise ValueError(
+                                    "La precisión debe estar entre 1 y 38."
+                                )
+
+                            # Verifica que la entrada tenga suficiente longitud
+                            if len(useful_data) < bytes_for_value + 1:
+                                raise ValueError(
+                                    f"La entrada tiene solo {len(useful_data)} bytes, pero se esperaban al menos {bytes_for_value + 1}."
+                                )
+
+                            # Leer la escala (primer byte)
+                            scale = useful_data[0]
+                            if not (0 <= scale <= precision):
+                                raise ValueError(
+                                    f"Escala inválida: {scale}. Debe estar entre 0 y {precision}."
+                                )
+
+                            # Leer el valor entero (resto de los bytes)
+                            value_bytes = useful_data[1:bytes_for_value]
+                            is_negative = value_bytes[-1] & 0x80 != 0
+
+                            print("Value bytes:", value_bytes)
+                            print("Is negative:", is_negative)
+
+                            if is_negative:
+                                # Si el número es negativo, aplicar complemento a 2
+                                value = int.from_bytes(
+                                    value_bytes, byteorder="little", signed=False
+                                )
+                                value = -(~value + 1)
+                            else:
+                                # Número positivo
+                                value = int.from_bytes(
+                                    value_bytes, byteorder="little", signed=False
+                                )
+
+                            # Aplicar la escala (dividir por 10^scale)
+                            decimal_value = value / (10**scale)
+
+                            print("decimal parsead", decimal_value)
+                            operation_data[column_name] = decimal_value
                 # ================================================================================
                 #                       Parse now variable length columns
                 # ================================================================================
