@@ -211,7 +211,6 @@ WHERE AllocUnitName IS NOT NULL
                         elif "decimal" in data_type:
                             # Parse precision and scale from decimal(x,y)
 
-                            scale = int(data_type.split(",")[1].replace(")", ""))
                             precision = int(
                                 data_type.split(",")[0].replace("decimal(", "")
                             )
@@ -237,37 +236,38 @@ WHERE AllocUnitName IS NOT NULL
                                     f"La entrada tiene solo {len(useful_data)} bytes, pero se esperaban al menos {bytes_for_value + 1}."
                                 )
 
-                            # Leer la escala (primer byte)
+                            # Read the scale from the first byte
                             scale = useful_data[0]
                             if not (0 <= scale <= precision):
                                 raise ValueError(
                                     f"Escala inválida: {scale}. Debe estar entre 0 y {precision}."
                                 )
 
-                            # Leer el valor entero (resto de los bytes)
+                            # Read the rest as an integer
                             value_bytes = useful_data[1:bytes_for_value]
+
+                            # Weird check to see if the most significant bit is 1
                             is_negative = value_bytes[-1] & 0x80 != 0
 
                             print("Value bytes:", value_bytes)
                             print("Is negative:", is_negative)
 
                             if is_negative:
-                                # Si el número es negativo, aplicar complemento a 2
+                                # Apply two's complement
+                                # In a couple months, only God and GPT will know how this works
+
                                 value = int.from_bytes(
                                     value_bytes, byteorder="little", signed=False
                                 )
                                 value = -(~value + 1)
                             else:
-                                # Número positivo
                                 value = int.from_bytes(
                                     value_bytes, byteorder="little", signed=False
                                 )
 
-                            # Aplicar la escala (dividir por 10^scale)
                             decimal_value = value / (10**scale)
-
-                            print("decimal parsead", decimal_value)
                             operation_data[column_name] = decimal_value
+
                 # ================================================================================
                 #                       Parse now variable length columns
                 # ================================================================================
