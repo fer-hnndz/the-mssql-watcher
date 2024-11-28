@@ -98,20 +98,40 @@ class AuthScreen(Screen):
         main_container.loading = True
 
         self.run_worker(
-            self.try_connect(host, port, username, password, database), exclusive=True
+            self.try_connect(
+                host, port, username, password, database, windows_auth=(auth == "win")
+            ),
+            exclusive=True,
         )
 
     async def try_connect(
-        self, host: str, port: str, username: str, password: str, database: str
+        self,
+        host: str,
+        port: str,
+        username: str,
+        password: str,
+        database: str,
+        windows_auth: bool = True,
     ) -> None:
         try:
             self.DATABASE = database
-            conn = pymssql.connect(
-                server=host,
-                port=port,
-                user=username,
-                password=password,
-            )
+            conn = None
+
+            if windows_auth:
+                conn = pymssql.connect(
+                    server=host,
+                    port=port,
+                    trusted=True,
+                )
+            else:
+
+                conn = pymssql.connect(
+                    server=host,
+                    port=port,
+                    user=username,
+                    password=password,
+                )
+
             self.CURSOR = conn.cursor()
         except Exception as e:
             self.notify(f"Error: {e}")
