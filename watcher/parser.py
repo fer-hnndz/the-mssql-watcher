@@ -538,7 +538,10 @@ WHERE AllocUnitName IS NOT NULL
             if not table_schema:
                 raise TypeError(f"Table {table_name} not found in schema.")
 
-            if record.operation == "LOP_INSERT_ROWS":
+            if (
+                record.operation == "LOP_INSERT_ROWS"
+                or record.operation == "LOP_DELETE_ROWS"
+            ):
 
                 if not parsed_transactions.get(record.operation):
                     parsed_transactions[record.operation] = {}
@@ -551,12 +554,15 @@ WHERE AllocUnitName IS NOT NULL
                     {
                         "data": self.parse_bytes(record.raw_data, table_schema),
                         "transaction_id": record.transaction_id,
-                        "schema": table_name.split(".")[0],
+                        "schema": record.alloc_unit.split(".")[0],
+                        "table": table_name,
                     }
                 )
 
-            # elif record.operation == "LOP_DELETE_ROWS":
-            #     print("Es un delete")
+            # elif (
+            #     record.operation == "LOP_MODIFY_ROW"
+            #     and record.context == "LCX_CLUSTERED"
+            # ):
             #     if not parsed_transactions.get(record.operation):
             #         parsed_transactions[record.operation] = {}
             #         parsed_transactions[record.operation][table_name] = []
@@ -567,7 +573,7 @@ WHERE AllocUnitName IS NOT NULL
             #     parsed_transactions[record.operation][table_name].append(
             #         {
             #             "data_before": self.parse_bytes(record.raw_data, table_schema),
-            #             # "data_after": self.parse_bytes(record.raw_data2, table_schema),
+            #             "data_after": self.parse_bytes(record.raw_data2, table_schema),
             #             "transaction_id": record.transaction_id,
             #             "schema": table_name.split(".")[0],
             #         }

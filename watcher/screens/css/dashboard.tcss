@@ -1,0 +1,8 @@
+#switch-container {
+    height:33%
+}
+
+Tabs {
+    width: auto;
+    margin-top: 2;
+}
