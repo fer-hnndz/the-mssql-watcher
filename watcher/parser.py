@@ -53,7 +53,7 @@ FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}';"""
                     char_octet_length,
                 ) = column_row
 
-                if data_type in ["char", "varchar", "nvarchar", "nchar"]:
+                if data_type in ["varchar", "nvarchar", "nchar"]:
                     final_types.append(
                         ColumnSchema(
                             COLUMN_NAME=column_name,
@@ -150,8 +150,7 @@ WHERE AllocUnitName IS NOT NULL
             data_type = col.DATA_TYPE
             column_name = col.COLUMN_NAME
 
-            if col.DATA_TYPE not in ["char", "varchar", "nvarchar", "nchar"]:
-
+            if col.DATA_TYPE not in ["varchar", "nvarchar", "nchar"]:
                 if data_type.lower() == "int":
                     value = int.from_bytes(useful_data[:4], "little")
                     operation_data[column_name] = value
@@ -184,7 +183,7 @@ WHERE AllocUnitName IS NOT NULL
                     operation_data[column_name] = float(exact_value)
                     useful_data = useful_data[8:]
 
-                elif data_type.lower() == "decimal" or data_type.lower() == "numeric":
+                elif "decimal" in data_type.lower() or data_type.lower() == "numeric":
                     # Obtener precisión y escala desde el esquema
                     precision = col.NUMERIC_PRECISION
                     scale = col.NUMERIC_SCALE
@@ -206,7 +205,7 @@ WHERE AllocUnitName IS NOT NULL
 
                     # Leer los bytes binarios para el valor
                     raw_value = useful_data[1:bytes_for_value]
-                    is_negative = useful_data[1:1] & 0x80 != 0
+                    is_negative = useful_data[0] & 0x80 != 0
                     value = int.from_bytes(raw_value, byteorder="little")
                     if is_negative:
                         value = -value
@@ -246,6 +245,7 @@ WHERE AllocUnitName IS NOT NULL
                     value = struct.unpack("<i", useful_data[:4])[0] / 10000.0
                     operation_data[column_name] = value
                     useful_data = useful_data[4:]
+
                 elif data_type.lower() == "date":
                     try:
                         days = int.from_bytes(
@@ -254,7 +254,7 @@ WHERE AllocUnitName IS NOT NULL
                         )
                         if not (-693593 <= days <= 2958465):
                             raise ValueError(
-                                f"El valor de 'days' está fuera de rango: {days}"
+                                f"[date] El valor de 'days' está fuera de rango: {days}"
                             )
                         value = datetime(1, 1, 1) + timedelta(days=days)
 
@@ -380,7 +380,7 @@ WHERE AllocUnitName IS NOT NULL
                     # Validar rango de días
                     if not (0 <= days <= 65535):
                         raise ValueError(
-                            f"El valor de 'days' está fuera de rango: {days}"
+                            f"[smalldatetime] El valor de 'days' está fuera de rango: {days}"
                         )
 
                     # Calcular fecha y hora
@@ -449,7 +449,7 @@ WHERE AllocUnitName IS NOT NULL
 
         # Filter only the variable length columns from the table schema
         variable_colummns = filter(
-            lambda col: col.DATA_TYPE in ["char", "varchar", "nvarchar", "nchar"],
+            lambda col: col.DATA_TYPE in ["varchar", "nvarchar", "nchar"],
             table_schema,
         )
 
@@ -548,8 +548,30 @@ WHERE AllocUnitName IS NOT NULL
                     parsed_transactions[record.operation][table_name] = []
 
                 parsed_transactions[record.operation][table_name].append(
-                    self.parse_bytes(record.raw_data, table_schema)
+                    {
+                        "data": self.parse_bytes(record.raw_data, table_schema),
+                        "transaction_id": record.transaction_id,
+                        "schema": table_name.split(".")[0],
+                    }
                 )
+
+            # elif record.operation == "LOP_DELETE_ROWS":
+            #     print("Es un delete")
+            #     if not parsed_transactions.get(record.operation):
+            #         parsed_transactions[record.operation] = {}
+            #         parsed_transactions[record.operation][table_name] = []
+
+            #     elif not parsed_transactions[record.operation].get(table_name):
+            #         parsed_transactions[record.operation][table_name] = []
+
+            #     parsed_transactions[record.operation][table_name].append(
+            #         {
+            #             "data_before": self.parse_bytes(record.raw_data, table_schema),
+            #             # "data_after": self.parse_bytes(record.raw_data2, table_schema),
+            #             "transaction_id": record.transaction_id,
+            #             "schema": table_name.split(".")[0],
+            #         }
+            #     )
 
         self.CURSOR.close()
         return parsed_transactions
