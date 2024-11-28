@@ -194,7 +194,7 @@ WHERE AllocUnitName IS NOT NULL
                         )
 
                     # Determinar la longitud según la precisión
-                    if precision <= 9:
+                    if precision <= 9
                         bytes_for_value = 5
                     elif precision <= 19:
                         bytes_for_value = 9

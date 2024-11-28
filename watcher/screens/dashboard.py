@@ -82,24 +82,47 @@ class Dashboard(Screen):
         # Format:
         # parsed_data -> Operation (CRUD) -> Table -> {schema, data (parsed data), transaction_id}
         if inserts_enabled:
+
             for table_name, operation_data in self.parsed_data[
                 "LOP_INSERT_ROWS"
             ].items():
 
+                idx = 0
                 for row in operation_data:
+                    print("idx", idx)
                     table.add_row(
-                        "INSERT", row["schema"], table_name, "-", "-", "-", "-", "/"
+                        "INSERT",
+                        row["table"],
+                        table_name,
+                        "-",
+                        "-",
+                        "-",
+                        "-",
+                        "/",
+                        key=f"insert-{row['table']}-{idx}",
                     )
+                    idx += 1
 
         if deletes_enabled:
             for table_name, operation_data in self.parsed_data[
                 "LOP_DELETE_ROWS"
             ].items():
 
+                idx = 0
                 for row in operation_data:
                     table.add_row(
-                        "DELETE", row["schema"], table_name, "-", "-", "-", "-", "/"
+                        "DELETE",
+                        row["table"],
+                        table_name,
+                        "-",
+                        "-",
+                        "-",
+                        "-",
+                        "/",
+                        key=f"delete-{row['table']}-{idx}",
                     )
+
+                    idx += 1
 
     def on_tabs_tabactivated(self, tabs: Tabs, tab: Tab) -> None:
         container = self.query_one(
@@ -121,31 +144,22 @@ class Dashboard(Screen):
 
         if action == "INSERT":
 
-            where_clause = " AND ".join(
-                [f"{column} = {value}" for column, value in operation["data"].items()]
-            )
+            where_clause = ""
+            for column, value in operation["data"].items():
+                # Determinar si el valor debe estar entre comillas simples
+                if isinstance(value, str) or not isinstance(value, (int, float, bool)):
+                    formatted_value = f"'{value}'"
+                else:
+                    formatted_value = value
+
+                # Agregar condición al WHERE
+                if where_clause:
+                    where_clause += " AND "
+                where_clause += f"{column} = {formatted_value}"
 
             return (
-                f"DELETE FROM {operation["schema"]}.{table_name} WHERE {where_clause};"
+                f"DELETE FROM {operation['schema']}.{table_name} WHERE {where_clause};"
             )
-
-        elif action == "UPDATE":
-            old_values_str = " = ".join(
-                [
-                    f"{column} = {value}"
-                    for column, value in operation["old_data"].items()
-                ]
-            )
-
-            where_clause = " AND ".join(
-                [
-                    f"{column} = {value}"
-                    for column, value in operation["new_data"].items()
-                ]
-            )
-
-            sql = f"UPDATE {operation["schema"]}.{table_name} SET {old_values_str} WHERE {where_clause};"
-            return sql
 
         elif action == "DELETE":
             values_str = ", ".join(
@@ -154,4 +168,35 @@ class Dashboard(Screen):
 
             return (
                 f"INSERT INTO {operation["schema"]}.{table_name} VALUES ({values_str});"
+            )
+
+        return ""
+
+    def on_data_table_cell_selected(self, event: DataTable.CellSelected):
+
+        # Find row key
+        table = self.query_one("#transaction-table", expect_type=DataTable)
+        row_key = event.cell_key.row_key.value
+
+        if not row_key:
+            return
+
+        table_name = table.get_row(row_key)[2]
+
+        log = self.query_one("#sql-log", expect_type=Log)
+        operation = row_key.split("-")[0]
+        idx = row_key.split("-")[2]
+
+        if operation == "insert":
+            log.clear()
+            operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
+            log.write(
+                self.gen_undo_sql(operation_dict, operation_dict["table"], "INSERT")
+            )
+
+        elif operation == "delete":
+            log.clear()
+            operation_dict = self.parsed_data["LOP_DELETE_ROWS"][table_name][int(idx)]
+            log.write(
+                self.gen_undo_sql(operation_dict, operation_dict["table"], "DELETE")
             )
