@@ -8,11 +8,16 @@ from textual.widgets import DataTable, Footer, Header, Label, Switch, Tabs, Tab,
 
 class Dashboard(Screen):
     CSS_PATH = "css/dashboard.tcss"
+    LAST_CELL_EVENT = None
+    CURRENT_TAB = ""
 
-    def __init__(self, parsed_data: dict[str, typing.Any]):
+    def __init__(
+        self, parsed_data: dict[str, typing.Any], result_transactions: typing.Any = None
+    ):
         super().__init__()
         self.app.sub_title = "Dashboard"
         self.parsed_data = parsed_data
+        self.result_transactions = result_transactions
 
         print(self.parsed_data)
 
@@ -32,7 +37,7 @@ class Dashboard(Screen):
                 yield Switch(value=True, id="delete-switch")
 
         # Operation, Schema, Object, User, Begin Time, End Time, Transaction ID, LSN
-        yield DataTable(id="transaction-table")
+        yield DataTable(id="transaction-table", zebra_stripes=True)
 
         yield Tabs(
             "Operation Details",
@@ -94,11 +99,11 @@ class Dashboard(Screen):
                         "INSERT",
                         row["table"],
                         table_name,
-                        "-",
-                        "-",
-                        "-",
-                        "-",
-                        "/",
+                        row["username"],
+                        row["begin_time"],
+                        row["end_time"],
+                        row["transaction_id"],
+                        row["lsn"],
                         key=f"insert-{row['table']}-{idx}",
                     )
                     idx += 1
@@ -114,22 +119,61 @@ class Dashboard(Screen):
                         "DELETE",
                         row["table"],
                         table_name,
-                        "-",
-                        "-",
-                        "-",
-                        "-",
-                        "/",
+                        row["username"],
+                        row["begin_time"],
+                        row["end_time"],
+                        row["transaction_id"],
+                        row["lsn"],
                         key=f"delete-{row['table']}-{idx}",
                     )
 
                     idx += 1
 
-    def on_tabs_tabactivated(self, tabs: Tabs, tab: Tab) -> None:
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        self.CURRENT_TAB = event.tab.id
+        self.update_info()
+
+    def update_info(self) -> None:
+
         container = self.query_one(
             "#operation-details-container", expect_type=Container
         )
-        container.remove_children("*")
-        print(tab)
+        log = self.query_one("#sql-log", expect_type=Log)
+
+        if not self.LAST_CELL_EVENT or not self.CURRENT_TAB:
+            return
+
+        if self.CURRENT_TAB == "tab-3":
+
+            table = self.query_one("#transaction-table", expect_type=DataTable)
+            row_key = self.LAST_CELL_EVENT.cell_key.row_key.value
+
+            if not row_key:
+                return
+
+            operation = row_key.split("-")[0]
+            idx = row_key.split("-")[2]
+
+            operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
+
+            table_name = table.get_row(row_key)[2]
+            self.gen_undo_sql(operation_dict, operation_dict["table"], "INSERT")
+
+        if self.CURRENT_TAB == "tab-4":
+
+            table = self.query_one("#transaction-table", expect_type=DataTable)
+            row_key = self.LAST_CELL_EVENT.cell_key.row_key.value
+
+            if not row_key:
+                return
+
+            operation = row_key.split("-")[0]
+            idx = row_key.split("-")[2]
+
+            operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
+
+            table_name = table.get_row(row_key)[2]
+            self.gen_redo_sql(operation_dict, operation_dict["table"], "INSERT")
 
     # ===========================
     # app logic funcs
@@ -172,31 +216,66 @@ class Dashboard(Screen):
 
         return ""
 
+    def gen_redo_sql(
+        self,
+        operation: dict[str, typing.Any],
+        table_name: str,
+        action: typing.Literal["INSERT", "UPDATE", "DELETE"],
+    ) -> str:
+        if action == "INSERT":
+            # Generar el SQL para volver a insertar
+            columns = ", ".join(operation["data"].keys())
+            values = ", ".join(
+                [
+                    (
+                        f"'{value}'"
+                        if isinstance(value, str)
+                        or not isinstance(value, (int, float, bool))
+                        else str(value)
+                    )
+                    for value in operation["data"].values()
+                ]
+            )
+            return f"INSERT INTO {operation['schema']}.{table_name} ({columns}) VALUES ({values});"
+
+        elif action == "DELETE":
+            # Generar el SQL para volver a eliminar
+            where_clause = ""
+            for column, value in operation["data"].items():
+                # Determinar si el valor debe estar entre comillas simples
+                if isinstance(value, str) or not isinstance(value, (int, float, bool)):
+                    formatted_value = f"'{value}'"
+                else:
+                    formatted_value = value
+
+                # Agregar condición al WHERE
+                if where_clause:
+                    where_clause += " AND "
+                where_clause += f"{column} = {formatted_value}"
+
+            return (
+                f"DELETE FROM {operation['schema']}.{table_name} WHERE {where_clause};"
+            )
+
+        elif action == "UPDATE":
+            # Generar el SQL para rehacer un update
+            set_clause = ", ".join(
+                [
+                    f"{column} = {'NULL' if value is None else (f"'{value}'" if isinstance(value, str) or not isinstance(value, (int, float, bool)) else value)}"
+                    for column, value in operation["data"]["new"].items()
+                ]
+            )
+            where_clause = " AND ".join(
+                [
+                    f"{column} = {'NULL' if value is None else (f"'{value}'" if isinstance(value, str) or not isinstance(value, (int, float, bool)) else value)}"
+                    for column, value in operation["data"]["old"].items()
+                ]
+            )
+            return f"UPDATE {operation['schema']}.{table_name} SET {set_clause} WHERE {where_clause};"
+
+        return ""
+
     def on_data_table_cell_selected(self, event: DataTable.CellSelected):
 
-        # Find row key
-        table = self.query_one("#transaction-table", expect_type=DataTable)
-        row_key = event.cell_key.row_key.value
-
-        if not row_key:
-            return
-
-        table_name = table.get_row(row_key)[2]
-
-        log = self.query_one("#sql-log", expect_type=Log)
-        operation = row_key.split("-")[0]
-        idx = row_key.split("-")[2]
-
-        if operation == "insert":
-            log.clear()
-            operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
-            log.write(
-                self.gen_undo_sql(operation_dict, operation_dict["table"], "INSERT")
-            )
-
-        elif operation == "delete":
-            log.clear()
-            operation_dict = self.parsed_data["LOP_DELETE_ROWS"][table_name][int(idx)]
-            log.write(
-                self.gen_undo_sql(operation_dict, operation_dict["table"], "DELETE")
-            )
+        self.LAST_CELL_EVENT = event
+        self.update_info()

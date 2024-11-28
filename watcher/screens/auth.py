@@ -129,7 +129,8 @@ class AuthScreen(Screen):
             self.notify("Connected!")
 
             p = Parser(self.CURSOR, database=self.DATABASE)
-
             self.app.push_screen(
-                Dashboard(parsed_data=p.parse_online_transaction_log())
+                Dashboard(
+                    parsed_data=p.parse_online_transaction_log(),
+                )
             )

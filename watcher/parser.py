@@ -106,19 +106,32 @@ FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}';"""
 
         self.CURSOR.execute(
             """SELECT 
-    Operation,
-    Context,
-    [Transaction ID],
-    AllocUnitName,
-    [RowLog Contents 0],
-    [RowLog Contents 1],
-    [RowLog Contents 2],
-    [RowLog Contents 3],
-    *
-FROM fn_dblog(NULL, NULL)
-WHERE AllocUnitName IS NOT NULL 
-  AND AllocUnitName NOT LIKE 'sys.%'
-  AND AllocUnitName NOT LIKE 'Unknown Alloc%';
+    log.[Operation], -- Operación exacta
+    log.[Context], -- Contexto de la operación
+    log.[Transaction ID] AS [TransactionID], -- ID de la transacción
+    log.[Current LSN] AS [CurrentLSN], -- Log Sequence Number actual
+    log.[Previous LSN] AS [PreviousLSN], -- Log Sequence Number previo
+    log.[AllocUnitName] AS [Schema_Object], -- Esquema y objeto afectado
+    log.[RowLog Contents 0], -- Contenido del log (parte 0)
+    log.[RowLog Contents 1], -- Contenido del log (parte 1)
+    log.[RowLog Contents 2], -- Contenido del log (parte 2)
+    log.[RowLog Contents 3], -- Contenido del log (parte 3)
+    begin_log.[Begin Time] AS [BeginTime], -- Tiempo de inicio de la transacción
+    end_log.[Begin Time] AS [EndTime], -- Tiempo aproximado de finalización de la transacción
+    SUSER_SNAME() AS [UserName] -- Usuario ejecutor (de la sesión actual)    AND log.[AllocUnitName] NOT LIKE 'MS%' -- Excluir objetos de Microsoft
+
+FROM sys.fn_dblog(NULL, NULL) log -- Logs principales
+LEFT JOIN sys.fn_dblog(NULL, NULL) begin_log
+    ON log.[Transaction ID] = begin_log.[Transaction ID]
+    AND begin_log.[Operation] = 'LOP_BEGIN_XACT' -- Identifica el inicio de la transacción
+LEFT JOIN sys.fn_dblog(NULL, NULL) end_log
+    ON log.[Transaction ID] = end_log.[Transaction ID]
+    AND end_log.[Operation] IN ('LOP_COMMIT_XACT', 'LOP_ABORT_XACT') -- Identifica el final de la transacción
+WHERE 
+    log.[AllocUnitName] IS NOT NULL -- Ignorar registros sin nombre de unidad de asignación
+    AND log.[AllocUnitName] NOT LIKE 'sys%' -- Excluir objetos del sistema
+    AND log.[AllocUnitName] NOT LIKE 'Unknown Alloc Unit%' -- Excluir asignaciones desconocidas
+ORDER BY log.[Current LSN];
 """
         )
 
@@ -129,9 +142,13 @@ WHERE AllocUnitName IS NOT NULL
                     operation=row[0],
                     context=row[1],
                     transaction_id=row[2],
-                    alloc_unit=row[3],
-                    raw_data=row[4],
-                    raw_data2=row[5],
+                    alloc_unit=row[5],
+                    raw_data=row[6],
+                    raw_data2=row[7],
+                    begin_operation=row[10],
+                    end_operation=row[11],
+                    username=row[12],
+                    current_lsn=row[3],
                 )
             )
 
@@ -194,7 +211,7 @@ WHERE AllocUnitName IS NOT NULL
                         )
 
                     # Determinar la longitud según la precisión
-                    if precision <= 9
+                    if precision <= 9:
                         bytes_for_value = 5
                     elif precision <= 19:
                         bytes_for_value = 9
@@ -556,28 +573,12 @@ WHERE AllocUnitName IS NOT NULL
                         "transaction_id": record.transaction_id,
                         "schema": record.alloc_unit.split(".")[0],
                         "table": table_name,
+                        "begin_time": record.begin_operation,
+                        "username": record.username,
+                        "end_time": record.end_operation,
+                        "lsn": record.current_lsn,
                     }
                 )
-
-            # elif (
-            #     record.operation == "LOP_MODIFY_ROW"
-            #     and record.context == "LCX_CLUSTERED"
-            # ):
-            #     if not parsed_transactions.get(record.operation):
-            #         parsed_transactions[record.operation] = {}
-            #         parsed_transactions[record.operation][table_name] = []
-
-            #     elif not parsed_transactions[record.operation].get(table_name):
-            #         parsed_transactions[record.operation][table_name] = []
-
-            #     parsed_transactions[record.operation][table_name].append(
-            #         {
-            #             "data_before": self.parse_bytes(record.raw_data, table_schema),
-            #             "data_after": self.parse_bytes(record.raw_data2, table_schema),
-            #             "transaction_id": record.transaction_id,
-            #             "schema": table_name.split(".")[0],
-            #         }
-            #     )
 
         self.CURSOR.close()
         return parsed_transactions
