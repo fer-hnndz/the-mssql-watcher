@@ -87,13 +87,6 @@ class AuthScreen(Screen):
         host = server_data.split(",")[0]
         port = server_data.split(",")[1]
 
-        #! remove on prod
-        host = "localhost"
-        port = "1433"
-        username = "sa"
-        password = "freaky_gates123"
-        database = "sachen"
-
         main_container = self.query_one("#main", expect_type=Center)
         main_container.loading = True
 
