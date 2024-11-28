@@ -134,17 +134,16 @@ class Dashboard(Screen):
         self.update_info()
 
     def update_info(self) -> None:
-
-        container = self.query_one(
-            "#operation-details-container", expect_type=Container
-        )
         log = self.query_one("#sql-log", expect_type=Log)
 
         if not self.LAST_CELL_EVENT or not self.CURRENT_TAB:
             return
 
-        if self.CURRENT_TAB == "tab-3":
+        print("================ Tab")
+        print(self.CURRENT_TAB)
 
+        log.clear()
+        if self.CURRENT_TAB == "tab-3":
             table = self.query_one("#transaction-table", expect_type=DataTable)
             row_key = self.LAST_CELL_EVENT.cell_key.row_key.value
 
@@ -154,10 +153,14 @@ class Dashboard(Screen):
             operation = row_key.split("-")[0]
             idx = row_key.split("-")[2]
 
+            table_name = table.get_row(row_key)[2]
             operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
 
-            table_name = table.get_row(row_key)[2]
-            self.gen_undo_sql(operation_dict, operation_dict["table"], "INSERT")
+            log.write(
+                self.gen_undo_sql(
+                    operation_dict, operation_dict["table"], operation.upper()
+                )
+            )
 
         if self.CURRENT_TAB == "tab-4":
 
@@ -170,10 +173,14 @@ class Dashboard(Screen):
             operation = row_key.split("-")[0]
             idx = row_key.split("-")[2]
 
+            table_name = table.get_row(row_key)[2]
             operation_dict = self.parsed_data["LOP_INSERT_ROWS"][table_name][int(idx)]
 
-            table_name = table.get_row(row_key)[2]
-            self.gen_redo_sql(operation_dict, operation_dict["table"], "INSERT")
+            log.write(
+                self.gen_redo_sql(
+                    operation_dict, operation_dict["table"], operation.upper()
+                )
+            )
 
     # ===========================
     # app logic funcs
