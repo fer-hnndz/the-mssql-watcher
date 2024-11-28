@@ -56,8 +56,14 @@ class Dashboard(Screen):
         # Undo Script: SQL Script
         # Redo Script: SQL Script
 
-    # * on post_mount?
+    def on_switch_change(self, event: Switch.Changed) -> None:
+        self.populate_table()
+
     def on_mount(self) -> None:
+        self.populate_table()
+        self.update_info()
+
+    def populate_table(self) -> None:
         log = self.query_one("#sql-log", expect_type=Log)
 
         table = self.query_one("#transaction-table", expect_type=DataTable)

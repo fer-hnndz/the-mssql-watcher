@@ -111,11 +111,7 @@ class AuthScreen(Screen):
             conn = None
 
             if windows_auth:
-                conn = pymssql.connect(
-                    server=host,
-                    port=port,
-                    trusted=True,
-                )
+                conn = pymssql.connect(server=host, autocommit=True)
             else:
 
                 conn = pymssql.connect(
