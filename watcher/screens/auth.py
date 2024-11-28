@@ -5,8 +5,17 @@ from textual.app import ComposeResult
 from textual.containers import Center, Horizontal
 from textual.screen import Screen
 from textual.types import SelectType
-from textual.widgets import (Button, Footer, Header, Input, Label, RadioButton,
-                             RadioSet, Select)
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    Select,
+)
+from textual.worker import Worker, WorkerState
 
 from ..parser import Parser
 from .dashboard import Dashboard
@@ -15,6 +24,7 @@ from .dashboard import Dashboard
 class AuthScreen(Screen):
     CSS_PATH = "css/auth.tcss"
     CURSOR: Optional[pymssql.Cursor] = None
+    DATABASE: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         self.app.sub_title = "Auth Screen"
@@ -57,18 +67,20 @@ class AuthScreen(Screen):
 
             yield Button("Conectar", id="connect-button", variant="primary")
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         """Button pressed event handler."""
 
         server_data_input = self.query_one("#server-input", expect_type=Input)
         auth_input = self.query_one("#auth-select", expect_type=Select)
         username_input = self.query_one("#username-input", expect_type=Input)
         password_input = self.query_one("#password-input", expect_type=Input)
+        database_input = self.query_one("#database-input", expect_type=Input)
 
         server_data = server_data_input.value
         auth = auth_input.value
         username = username_input.value
         password = password_input.value
+        database = database_input.value
 
         # TODO: Implement Date logic and Windows Auth
 
@@ -80,19 +92,44 @@ class AuthScreen(Screen):
         port = "1433"
         username = "sa"
         password = "freaky_gates123"
+        database = "sachen"
 
         main_container = self.query_one("#main", expect_type=Center)
         main_container.loading = True
 
-        # TODO: Database selector
-        conn = pymssql.connect(
-            server=host,
-            port=port,
-            user=username,
-            password=password,
+        self.run_worker(
+            self.try_connect(host, port, username, password, database), exclusive=True
         )
 
-        self.notify("Connected!")
-        p = Parser(conn.cursor())
+    async def try_connect(
+        self, host: str, port: str, username: str, password: str, database: str
+    ) -> None:
+        try:
+            self.DATABASE = database
+            conn = pymssql.connect(
+                server=host,
+                port=port,
+                user=username,
+                password=password,
+            )
+            self.CURSOR = conn.cursor()
+        except Exception as e:
+            self.notify(f"Error: {e}")
 
-        self.app.push_screen(Dashboard(p.parse_online_transaction_log()))
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Worker state changed event handler."""
+
+        if event.state == WorkerState.SUCCESS:
+            if not self.CURSOR or not self.DATABASE:
+                return
+
+            main_container = self.query_one("#main", expect_type=Center)
+            main_container.loading = False
+
+            self.notify("Connected!")
+
+            p = Parser(self.CURSOR, database=self.DATABASE)
+
+            self.app.push_screen(
+                Dashboard(parsed_data=p.parse_online_transaction_log())
+            )
