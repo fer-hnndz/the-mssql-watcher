@@ -1,6 +1,39 @@
+#server-input, #server-label {
+    margin-top: 1;
+}
+
+#server-input {
+    margin-bottom: 1;
+}
+
+#auth-select {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#auth-radio {
+    margin-top: 1;
+    margin-bottom: 2;
+}
+
 #from-date {
     width: 20%;
 }
+
+#username-input {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#password-input {
+    margin-bottom: 1
+}
+
+#database-label {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
 
 #to-date {
     width: 20%;

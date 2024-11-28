@@ -1,22 +1,14 @@
-from textual.widgets import (
-    Label,
-    Input,
-    Button,
-    Select,
-    Header,
-    Footer,
-    RadioSet,
-    RadioButton,
-)
-from textual.types import SelectType
+from typing import Optional
+
+import pymssql
+from textual.app import ComposeResult
 from textual.containers import Center, Horizontal
 from textual.screen import Screen
-from textual.app import ComposeResult
+from textual.types import SelectType
+from textual.widgets import (Button, Footer, Header, Input, Label, RadioButton,
+                             RadioSet, Select)
 
-from typing import Optional
-import pymssql
 from ..parser import Parser
-
 from .dashboard import Dashboard
 
 
@@ -29,8 +21,8 @@ class AuthScreen(Screen):
         yield Header()
         yield Footer()
 
-        with Center():
-            yield Label("Server")
+        with Center(id="main"):
+            yield Label("Server", id="server-label")
             yield Input(placeholder="localhost,1433", id="server-input")
 
             yield Label("Authentication")
@@ -46,11 +38,15 @@ class AuthScreen(Screen):
             yield Label("Password")
             yield Input(id="password-input", password=True)
 
-            with RadioSet(id="auth-radio"):
-                yield RadioButton(
-                    "Online Transaction Log", value=True, name="online-log"
-                )
-                yield RadioButton("Backup File", name="backup-file", value=False)
+            yield Label("Database", id="database-label")
+            yield Input(id="database-input", placeholder="master")
+
+            with Center():
+                with RadioSet(id="auth-radio"):
+                    yield RadioButton(
+                        "Online Transaction Log", value=True, name="online-log"
+                    )
+                    yield RadioButton("Backup File", name="backup-file", value=False)
 
             with Horizontal():
                 yield Label("Desde")
@@ -61,13 +57,18 @@ class AuthScreen(Screen):
 
             yield Button("Conectar", id="connect-button", variant="primary")
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Button pressed event handler."""
 
-        server_data = self.query_one("#server-input", expect_type=Input).value
-        auth = self.query_one("#auth-select", expect_type=Select).value
-        username = self.query_one("#username-input", expect_type=Input).value
-        password = self.query_one("#password-input", expect_type=Input).value
+        server_data_input = self.query_one("#server-input", expect_type=Input)
+        auth_input = self.query_one("#auth-select", expect_type=Select)
+        username_input = self.query_one("#username-input", expect_type=Input)
+        password_input = self.query_one("#password-input", expect_type=Input)
+
+        server_data = server_data_input.value
+        auth = auth_input.value
+        username = username_input.value
+        password = password_input.value
 
         # TODO: Implement Date logic and Windows Auth
 
@@ -80,6 +81,9 @@ class AuthScreen(Screen):
         username = "sa"
         password = "freaky_gates123"
 
+        main_container = self.query_one("#main", expect_type=Center)
+        main_container.loading = True
+
         # TODO: Database selector
         conn = pymssql.connect(
             server=host,
@@ -91,5 +95,4 @@ class AuthScreen(Screen):
         self.notify("Connected!")
         p = Parser(conn.cursor())
 
-        p.parse_online_transaction_log()
-        self.app.push_screen(Dashboard())
+        self.app.push_screen(Dashboard(p.parse_online_transaction_log()))

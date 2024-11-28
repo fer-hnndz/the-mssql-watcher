@@ -1,5 +1,5 @@
 from textual.app import App, ComposeResult
-from textual.widgets import Label, Header, Footer, LoadingIndicator
+from textual.widgets import Footer, Header, Label, LoadingIndicator
 
 from .screens.auth import AuthScreen
 

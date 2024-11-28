@@ -1,12 +1,20 @@
-from textual.screen import Screen
-from textual.app import ComposeResult
+import typing
 
-from textual.widgets import Label, Header, Footer, DataTable, Tab, Switch
-from textual.containers import Container, Vertical, Center
+from textual.app import ComposeResult
+from textual.containers import Center, Container, Vertical
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header, Label, Switch, Tab
 
 
 class Dashboard(Screen):
     CSS_PATH = "css/dashboard.tcss"
+
+    def __init__(self, parsed_data: dict[str, typing.Any]):
+        super().__init__()
+        self.app.sub_title = "Dashboard"
+        self.parsed_data = parsed_data
+
+        print(self.parsed_data)
 
     def compose(self) -> ComposeResult:
         with Container():
